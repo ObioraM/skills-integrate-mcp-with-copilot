@@ -1,0 +1,14 @@
+{
+  "admin": {
+    "email": "teacher@mergington.edu",
+    "role": "admin",
+    "salt": "dc14f1d9c9b0fc2e3306a17e58eca455",
+    "password_hash": "2ab6cc575cd9260d44ea273161b0583d580b5127bffdb48991554dc2e6b3e162"
+  },
+  "student": {
+    "email": "student@mergington.edu",
+    "role": "student",
+    "salt": "2e6179bafb4c905eff71eaf2cf9b594f",
+    "password_hash": "4b21ead43c310e044727a3c2bd1508a10809b751e14be39beb4f45535f634316"
+  }
+}

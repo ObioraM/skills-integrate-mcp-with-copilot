@@ -1,23 +1,28 @@
-"""
-High School Management System API
+"""High School Management System API."""
 
-A super simple FastAPI application that allows students to view and sign up
-for extracurricular activities at Mergington High School.
-"""
-
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+import hashlib
+import json
 import os
 from pathlib import Path
+import secrets
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
+
+session_secret = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+app.add_middleware(SessionMiddleware, secret_key=session_secret, same_site="lax")
 
 # Mount the static files directory
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+users_file = current_dir / "users.json"
 
 # In-memory activity database
 activities = {
@@ -78,9 +83,78 @@ activities = {
 }
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def load_users() -> dict:
+    with users_file.open("r", encoding="utf-8") as file_handle:
+        return json.load(file_handle)
+
+
+users = load_users()
+
+
+def verify_password(password: str, salt: str, expected_hash: str) -> bool:
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        200000,
+    ).hex()
+    return secrets.compare_digest(password_hash, expected_hash)
+
+
+def get_current_user(request: Request) -> dict:
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+def require_admin(request: Request) -> dict:
+    user = get_current_user(request)
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
+
+
+@app.post("/auth/login")
+def login(credentials: LoginRequest, request: Request):
+    user_record = users.get(credentials.username)
+    if not user_record or not verify_password(
+        credentials.password,
+        user_record["salt"],
+        user_record["password_hash"],
+    ):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    session_user = {
+        "username": credentials.username,
+        "role": user_record["role"],
+        "email": user_record["email"],
+    }
+    request.session.clear()
+    request.session["user"] = session_user
+    return {"authenticated": True, "user": session_user}
+
+
+@app.post("/auth/logout")
+def logout(request: Request):
+    request.session.clear()
+    return {"message": "Logged out"}
+
+
+@app.get("/auth/session")
+def read_session(request: Request):
+    user = request.session.get("user")
+    return {"authenticated": bool(user), "user": user}
 
 
 @app.get("/activities")
@@ -89,14 +163,25 @@ def get_activities():
 
 
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(activity_name: str, email: str, request: Request):
     """Sign up a student for an activity"""
+    current_user = get_current_user(request)
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
 
+    if current_user["role"] == "student" and email != current_user["email"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Students can only sign up themselves",
+        )
+
     # Get the specific activity
     activity = activities[activity_name]
+
+    if len(activity["participants"]) >= activity["max_participants"]:
+        raise HTTPException(status_code=400, detail="Activity is full")
 
     # Validate student is not already signed up
     if email in activity["participants"]:
@@ -111,8 +196,10 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(activity_name: str, email: str, request: Request):
     """Unregister a student from an activity"""
+    require_admin(request)
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
