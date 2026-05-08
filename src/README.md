@@ -5,14 +5,15 @@ A super simple FastAPI application that allows students to view and sign up for 
 ## Features
 
 - View all available extracurricular activities
-- Sign up for activities
+- Session-based login for student and admin demo accounts
+- Role-based activity registration controls
 
 ## Getting Started
 
 1. Install the dependencies:
 
    ```
-   pip install fastapi uvicorn
+   pip install -r ../requirements.txt
    ```
 
 2. Run the application:
@@ -30,7 +31,18 @@ A super simple FastAPI application that allows students to view and sign up for 
 | Method | Endpoint                                                          | Description                                                         |
 | ------ | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
 | GET    | `/activities`                                                     | Get all activities with their details and current participant count |
+| POST   | `/auth/login`                                                     | Log in with a username/password and start a session                 |
+| POST   | `/auth/logout`                                                    | End the current session                                             |
+| GET    | `/auth/session`                                                   | Get the current authenticated user                                  |
 | POST   | `/activities/{activity_name}/signup?email=student@mergington.edu` | Sign up for an activity                                             |
+| DELETE | `/activities/{activity_name}/unregister?email=student@...`        | Remove a student from an activity                                   |
+
+## Demo Accounts
+
+- Admin: `admin` / `admin-password`
+- Student: `student` / `student-password`
+
+Students can sign up only themselves. Admins can sign up or unregister any student.
 
 ## Data Model
 
